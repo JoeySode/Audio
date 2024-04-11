@@ -1,0 +1,7 @@
+dep/inc/*
+dep/lib/*
+*.wav
+
+build
+main.c
+main

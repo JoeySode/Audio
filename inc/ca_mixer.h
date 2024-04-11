@@ -14,7 +14,7 @@
 
 
 // A structure that holds and plays audio data
-typedef struct _mixer_t* mixer_t;
+typedef struct mixer_t__* mixer_t;
 
 
 // Creates a mixer with room for the given number of sounds
@@ -28,10 +28,10 @@ void caDestroyMixer(mixer_t mixer);
 void caMixerBegin(mixer_t mixer);
 
 // Plays the sound from its current point
-void caMixerPlaySound(mixer_t mixer, sound_t* p_sound);
+void caMixerPlaySound(mixer_t mixer, sound_t sound);
 
 // Plays the sound from the beginning
-void caMixerStartSound(mixer_t mixer, sound_t* p_sound);
+void caMixerStartSound(mixer_t mixer, sound_t sound);
 
 
 #endif

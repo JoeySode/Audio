@@ -5,6 +5,19 @@
 #include <stdio.h>
 
 
+typedef struct sound_t__
+{
+  void* data;
+  size_t num_samples;
+  size_t cur_sample;
+
+  wav_info_t wav_info;
+
+  bool is_playing;
+}
+sound_t__;
+
+
 // A struct representing a WAV file header and the first subchunk
 typedef struct
 {
@@ -80,7 +93,7 @@ ca_result_t caMediaGetInfoWAV(wav_info_t* p_wav_info, const char* path)
   return CA_SUCCESS;
 }
 
-ca_result_t caMediaLoadWAV(sound_t* p_sound, const char* path, wav_info_t* p_wav_info)
+ca_result_t caMediaLoadWAV(sound_t* p_sound, const char* path)
 {
   // Open the file
   FILE* f = fopen(path, "rb");
@@ -130,7 +143,11 @@ ca_result_t caMediaLoadWAV(sound_t* p_sound, const char* path, wav_info_t* p_wav
   }
 
   // Initialize the sound
-  ca_result_t r = caInitSound(p_sound, chunk_head.size / fmt, fmt);
+  sound_t sound;
+  ca_result_t r;
+  wav_info_t wav_info = (wav_info_t){ .sample_rate = wav_head.sample_rate, .num_channels = wav_head.num_channels, .fmt = fmt };
+
+  r = caCreateSoundEx(&sound, chunk_head.size / fmt, &wav_info);
 
   if (r != CA_SUCCESS)
   {
@@ -139,27 +156,21 @@ ca_result_t caMediaLoadWAV(sound_t* p_sound, const char* path, wav_info_t* p_wav
   }
 
   // Read the audio data
-  if (fread(p_sound->data.v, 1, chunk_head.size, f) != chunk_head.size)
+  if (fread(sound->data, 1, chunk_head.size, f) != chunk_head.size)
   {
     fclose(f);
     return CA_ERR_IN;
   }
 
-  // Copy WAV info if requested
-  if (p_wav_info)
-  {
-    p_wav_info->sample_rate = wav_head.sample_rate;
-    p_wav_info->num_channels = wav_head.sample_rate;
-    p_wav_info->fmt = fmt;
-  }
-
   // Done
+  *p_sound = sound;
+
   fclose(f);
 
   return CA_SUCCESS;
 }
 
-ca_result_t caMediaSaveWAV(sound_t* p_sound, const char* path, uint32_t sample_rate, uint16_t num_channels)
+ca_result_t caMediaSaveWAV(sound_t sound, const char* path, uint32_t sample_rate, uint16_t num_channels)
 {
   // Open the file
   FILE* f = fopen(path, "wb");
@@ -168,7 +179,7 @@ ca_result_t caMediaSaveWAV(sound_t* p_sound, const char* path, uint32_t sample_r
     return CA_ERR_FILE;
 
   // Fill in the header
-  size_t data_size = p_sound->num_samples * p_sound->fmt;
+  size_t data_size = sound->num_samples * sound->wav_info.fmt;
 
   wav_head_t wav_head = (wav_head_t)
   {
@@ -180,12 +191,12 @@ ca_result_t caMediaSaveWAV(sound_t* p_sound, const char* path, uint32_t sample_r
     // Subchunk 1
     .fmt_head = CA_FMT_HEAD,
     .chunk_size = 16,
-    .format = p_sound->fmt == CA_FMT_F32 ? 3 : 1,
+    .format = sound->wav_info.fmt == CA_FMT_F32 ? 3 : 1,
     .num_channels = num_channels,
     .sample_rate = sample_rate,
-    .byte_rate = sample_rate *num_channels * p_sound->fmt,
-    .alignment = num_channels * p_sound->fmt,
-    .sample_size_b = p_sound->fmt * 8,
+    .byte_rate = sample_rate *num_channels * sound->wav_info.fmt,
+    .alignment = num_channels * sound->wav_info.fmt,
+    .sample_size_b = sound->wav_info.fmt * 8,
   };
 
   // Fill the data chunk header
@@ -209,7 +220,7 @@ ca_result_t caMediaSaveWAV(sound_t* p_sound, const char* path, uint32_t sample_r
   }
 
   // Write the audio data
-  if (fwrite(p_sound->data.v, p_sound->fmt, p_sound->num_samples, f) != p_sound->num_samples)
+  if (fwrite(sound->data, sound->wav_info.fmt, sound->num_samples, f) != sound->num_samples)
   {
     fclose(f);
     return CA_ERR_OUT;

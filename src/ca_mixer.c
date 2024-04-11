@@ -3,6 +3,7 @@
 #include "ca_mixer.h"
 
 #include "portaudio.h"
+#include "ca_wav.h"
 
 #include <stdbool.h>
 #include <stdlib.h>
@@ -10,12 +11,25 @@
 #include <stdio.h>
 
 
-// A function that adds n samples of a given type
-typedef void(*sample_add_fn_t)(sound_t* p_sound, void* dst, size_t num_frames);
-
-typedef struct _mixer_t
+typedef struct sound_t__
 {
-  sound_t** p_sounds;       // The sound queue
+  void* data;
+  size_t num_samples;
+  size_t cur_sample;
+
+  wav_info_t wav_info;
+
+  bool is_playing;
+}
+sound_t__;
+
+
+// A function that adds n samples of a given type
+typedef void(*sample_add_fn_t)(sound_t sound, void* dst, size_t num_frames);
+
+typedef struct mixer_t__
+{
+  sound_t* p_sounds;        // The sound queue
   size_t num_sounds;        // The number of sounds in the queue
   size_t cap_sounds;        // The maximum capacity of the sound queue
 
@@ -28,7 +42,7 @@ typedef struct _mixer_t
 
   bool pa_initialized;      // True if the mixer has initialized PortAudio
 }
-_mixer_t;
+mixer_t__;
 
 
 // Returns the audio format as the PortAudio enum variant
@@ -59,14 +73,14 @@ static int caMixerAudioCallback(const void* src, void* dst, unsigned long num_fr
   // Iterate through all sounds adding their data if they are playing
   for (size_t i = 0; i < mixer->num_sounds; i++)
   {
-    sound_t* p_sound = mixer->p_sounds[i];
+    sound_t sound = mixer->p_sounds[i];
 
     // Skip if not playing
-    if (!p_sound->is_playing)
+    if (!sound->is_playing)
       continue;
 
     // Call the adder function (see caMixerAddSamples... functions below)
-    mixer->adder_fn(p_sound, dst, num_vals);
+    mixer->adder_fn(sound, dst, num_vals);
   }
 
   // Remove any finished sound from the queue
@@ -91,53 +105,55 @@ static int caMixerAudioCallback(const void* src, void* dst, unsigned long num_fr
 }
 
 // Sample adding function for float
-static void caMixerAddSamplesF32(sound_t* p_sound, void* _out, size_t num_frames)
+static void caMixerAddSamplesF32(sound_t sound, void* _out, size_t num_frames)
 {
   float* out = (float*)_out;
+  float* in = (float*)sound->data;
 
   // Calculate the number of samples to copy, ending the sound if we reach past its data
   size_t num_samples;
-  size_t rem_samples = p_sound->num_samples - p_sound->cur_sample;
+  size_t rem_samples = sound->num_samples - sound->cur_sample;
 
   if (rem_samples <= num_frames)
   {
     num_samples = rem_samples;
-    p_sound->is_playing = false;
+    sound->is_playing = false;
   }
   else
     num_samples = num_frames;
 
   // Add the data
   for (size_t i = 0; i < num_samples; i++)
-    out[i] += p_sound->data.f[p_sound->cur_sample + i];
+    out[i] += in[sound->cur_sample + i];
 
   // Progress the pointer
-  p_sound->cur_sample += num_frames;
+  sound->cur_sample += num_frames;
 }
 
 // Sample adding function for int16_t
-static void caMixerAddSamplesI16(sound_t* p_sound, void* _out, size_t num_frames)
+static void caMixerAddSamplesI16(sound_t sound, void* _out, size_t num_frames)
 {
   int16_t* out = (int16_t*)_out;
+  int16_t* in = (int16_t*)sound->data;
 
   // Calculate the number of samples to copy, ending the sound if we reach past its data
   size_t num_samples;
-  size_t rem_samples = p_sound->num_samples - p_sound->cur_sample;
+  size_t rem_samples = sound->num_samples - sound->cur_sample;
 
   if (rem_samples <= num_frames)
   {
     num_samples = rem_samples;
-    p_sound->is_playing = false;
+    sound->is_playing = false;
   }
   else
     num_samples = num_frames;
 
   // Add the data
   for (size_t i = 0; i < num_samples; i++)
-    out[i] += p_sound->data.i[p_sound->cur_sample + i];
+    out[i] += in[sound->cur_sample + i];
 
   // Progress the pointer
-  p_sound->cur_sample += num_frames;
+  sound->cur_sample += num_frames;
 }
 
 // Returns a sample adder function for the given audio format
@@ -160,13 +176,13 @@ static sample_add_fn_t caAudioFmtGetSampleAdder(audio_fmt_t fmt)
 ca_result_t caCreateMixer(mixer_t* p_mixer, size_t num_sounds, audio_fmt_t fmt, double sample_rate, int num_channels, unsigned int frames_per_buffer)
 {
   // Allocate the mixer
-  _mixer_t* mixer = (_mixer_t*)malloc(sizeof(_mixer_t));
+  mixer_t__* mixer = (mixer_t__*)malloc(sizeof(mixer_t__));
 
   if (!mixer)
     return CA_ERR_ALLOC;
 
   // Allocate the sound queue
-  mixer->p_sounds = (sound_t**)calloc(num_sounds, sizeof(sound_t*));
+  mixer->p_sounds = (sound_t*)calloc(num_sounds, sizeof(sound_t*));
 
   if (!mixer->p_sounds)
   {
@@ -248,22 +264,22 @@ void caMixerBegin(mixer_t mixer)
   Pa_StartStream(mixer->stream);
 }
 
-void caMixerPlaySound(mixer_t mixer, sound_t* p_sound)
+void caMixerPlaySound(mixer_t mixer, sound_t sound)
 {
   // Add the sound to the queue if it is not already
-  if (!p_sound->is_playing)
+  if (!sound->is_playing)
   {
-    mixer->p_sounds[mixer->num_sounds] = p_sound;
+    mixer->p_sounds[mixer->num_sounds] = sound;
     mixer->num_sounds += 1;
   }
 
   // Play the sound
-  p_sound->is_playing = true;
+  sound->is_playing = true;
 }
 
-void caMixerStartSound(mixer_t mixer, sound_t* p_sound)
+void caMixerStartSound(mixer_t mixer, sound_t sound)
 {
-  p_sound->cur_sample = 0;
+  sound->cur_sample = 0;
 
-  caMixerPlaySound(mixer, p_sound);
+  caMixerPlaySound(mixer, sound);
 }
