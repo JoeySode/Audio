@@ -12,19 +12,21 @@ Run 'make clean' to remove the build directory.
 
 ## Example
 
-```
+```c
 mixer_t mixer;
-caCreateMixer(&mixer, 8, CA_FMT_F32, 48000.0, 2, 2048);
+caMixerCreate(&mixer, CA_FMT_F32, 48000.0, 2, 2048);
 caMixerBegin(mixer);
 
 sound_t sound;
-caMediaLoadWAV(&sound, "example_song.wav", NULL);
+caMediaLoadWAV(&sound, "example_song.wav");
 
-caMixerPlaySound(mixer, &sound);
-getchar();
+bool playing;
+caMixerPlaySound(mixer, sound, &playing);
 
-caDestroySound(&sound);
-caDestroyMixer(mixer);
+while (playing) {}
+
+caSoundDestroy(&sound);
+caMixerDestroy(mixer);
 ```
 
 ## License
