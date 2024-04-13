@@ -10,23 +10,20 @@ typedef struct sound_t__
 {
   void* data;
   size_t num_samples;
-  size_t cur_sample;
 
   wav_info_t wav_info;
-
-  bool is_playing;
 }
 sound_t__;
 
 
-ca_result_t caCreateSound(sound_t* p_sound, size_t num_samples, audio_fmt_t fmt)
+ca_result_t caSoundCreate(sound_t* p_sound, size_t num_samples, audio_fmt_t fmt)
 {
   wav_info_t wav_info = (wav_info_t){ .sample_rate = 0, .num_channels = 0, .fmt = fmt };
 
-  return caCreateSoundEx(p_sound, num_samples, &wav_info);
+  return caSoundCreateEx(p_sound, num_samples, &wav_info);
 }
 
-ca_result_t caCreateSoundEx(sound_t* p_sound, size_t num_samples, wav_info_t* wav_info)
+ca_result_t caSoundCreateEx(sound_t* p_sound, size_t num_samples, wav_info_t* wav_info)
 {
   // Allocate the sound
   sound_t__* sound = (sound_t__*)malloc(sizeof(sound_t__));
@@ -35,21 +32,18 @@ ca_result_t caCreateSoundEx(sound_t* p_sound, size_t num_samples, wav_info_t* wa
     return CA_ERR_ALLOC;
 
   // Allocate the sound's data
-  sound->data = (void*)calloc(num_samples, wav_info->fmt);
+  sound->data = (void*)malloc(num_samples * wav_info->fmt);
 
   if (!sound->data)
   {
-    caDestroySound(sound);
+    caSoundDestroy(sound);
     return CA_ERR_ALLOC;
   }
 
   // Initialize remaining data
   sound->num_samples = num_samples;
-  sound->cur_sample = 0;
 
   sound->wav_info = *wav_info;
-
-  sound->is_playing = false;
 
   // Done
   *p_sound = sound;
@@ -57,7 +51,7 @@ ca_result_t caCreateSoundEx(sound_t* p_sound, size_t num_samples, wav_info_t* wa
   return CA_SUCCESS;
 }
 
-void caDestroySound(sound_t sound)
+void caSoundDestroy(sound_t sound)
 {
   if (!sound)
     return;
@@ -71,7 +65,20 @@ void caDestroySound(sound_t sound)
 
 ca_result_t caSoundCopy(sound_t src, sound_t* p_dst)
 {
-  return caCreateSoundEx(p_dst, src->num_samples, &src->wav_info);
+  // Create the new sound
+  sound_t sound;
+  ca_result_t r = caSoundCreateEx(&sound, src->num_samples, &src->wav_info);
+
+  if (r != CA_SUCCESS)
+    return r;
+
+  // Copy the data
+  memcpy(sound->data, src->data, caSoundGetSize(src));
+
+  // Done
+  *p_dst = sound;
+
+  return CA_SUCCESS;
 }
 
 ca_result_t caSoundToF(sound_t sound)
@@ -125,24 +132,24 @@ audio_fmt_t caSoundGetFormat(sound_t sound)
   return sound->wav_info.fmt;
 }
 
+void* caSoundGetData(sound_t sound)
+{
+  return sound->data;
+}
+
+size_t caSoundGetNumSamples(sound_t sound)
+{
+  return sound->num_samples;
+}
+
 size_t caSoundGetSize(sound_t sound)
 {
   return sound->num_samples * sound->wav_info.fmt;
 }
 
-bool caSoundIsPlaying(sound_t sound)
-{
-  return sound->is_playing;
-}
-
 void caSoundGetWavInfo(sound_t sound, wav_info_t* wav_info)
 {
   *wav_info = sound->wav_info;
-}
-
-void caSoundSetSeconds(sound_t sound, float seconds)
-{
-  sound->cur_sample = (size_t)(seconds * (float)(sound->wav_info.sample_rate * sound->wav_info.num_channels));
 }
 
 void caSoundSetWavInfo(sound_t sound, wav_info_t* wav_info)

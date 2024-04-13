@@ -8,6 +8,7 @@
 #include "ca_audio_fmt.h"
 #include "ca_result.h"
 #include "ca_sound.h"
+#include "ca_wav.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -18,20 +19,20 @@ typedef struct mixer_t__* mixer_t;
 
 
 // Creates a mixer with room for the given number of sounds
-ca_result_t caCreateMixer(mixer_t* p_mixer, size_t num_sounds, audio_fmt_t fmt, double sample_rate, int num_channels, unsigned int frames_per_buffer);
+ca_result_t caMixerCreate(mixer_t* p_mixer, audio_fmt_t fmt, uint32_t sample_rate, uint16_t num_channels, uint32_t frames_per_buffer);
 
 // Destroys the mixer and its sounds
-void caDestroyMixer(mixer_t mixer);
+void caMixerDestroy(mixer_t mixer);
 
+
+// Plays the sound from the beginning. 'signal' is an optional parameter that will be set to true initially then false once the sound stops playing
+ca_result_t caMixerPlaySound(mixer_t mixer, sound_t sound, bool* signal);
 
 // Begins the mixer's stream
 void caMixerBegin(mixer_t mixer);
 
-// Plays the sound from its current point
-void caMixerPlaySound(mixer_t mixer, sound_t sound);
-
-// Plays the sound from the beginning
-void caMixerStartSound(mixer_t mixer, sound_t sound);
+// Copies the sound's wav info to the given one
+void caMixerGetWavInfo(mixer_t mixer, wav_info_t* wav_info);
 
 
 #endif

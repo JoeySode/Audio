@@ -9,11 +9,8 @@ typedef struct sound_t__
 {
   void* data;
   size_t num_samples;
-  size_t cur_sample;
 
   wav_info_t wav_info;
-
-  bool is_playing;
 }
 sound_t__;
 
@@ -79,9 +76,13 @@ ca_result_t caMediaGetInfoWAV(wav_info_t* p_wav_info, const char* path)
 
   // Get the audio format
   if (wav_head.format == 1 && wav_head.sample_size_b == 16)
+  {
     p_wav_info->fmt = CA_FMT_I16;
+  }
   else if (wav_head.format == 3 && wav_head.sample_size_b == 32)
+  {
     p_wav_info->fmt = CA_FMT_F32;
+  }
   else
     return CA_ERR_FTYPE;
 
@@ -133,9 +134,13 @@ ca_result_t caMediaLoadWAV(sound_t* p_sound, const char* path)
   audio_fmt_t fmt;
 
   if (wav_head.format == 1 && wav_head.sample_size_b == 16)
+  {
     fmt = CA_FMT_I16;
+  }
   else if (wav_head.format == 3 && wav_head.sample_size_b == 32)
+  {
     fmt = CA_FMT_F32;
+  }
   else
   {
     fclose(f);
@@ -144,10 +149,9 @@ ca_result_t caMediaLoadWAV(sound_t* p_sound, const char* path)
 
   // Initialize the sound
   sound_t sound;
-  ca_result_t r;
   wav_info_t wav_info = (wav_info_t){ .sample_rate = wav_head.sample_rate, .num_channels = wav_head.num_channels, .fmt = fmt };
 
-  r = caCreateSoundEx(&sound, chunk_head.size / fmt, &wav_info);
+  ca_result_t r = caSoundCreateEx(&sound, chunk_head.size / fmt, &wav_info);
 
   if (r != CA_SUCCESS)
   {

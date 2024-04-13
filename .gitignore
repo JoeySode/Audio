@@ -2,6 +2,6 @@ dep/inc/*
 dep/lib/*
 *.wav
 
-build
+build/*
 main.c
 main
