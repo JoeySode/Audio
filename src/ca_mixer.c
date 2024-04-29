@@ -1,9 +1,7 @@
 
-
 #include "ca_mixer.h"
 
 #include "portaudio.h"
-#include "ca_wav.h"
 
 #include <stdbool.h>
 #include <stdlib.h>
@@ -11,18 +9,8 @@
 #include <stdio.h>
 
 
-typedef struct sound_t__
-{
-  void* data;
-  size_t num_samples;
-
-  wav_info_t wav_info;
-}
-sound_t__;
-
-
 // A node in the mixer's sound queue
-typedef struct sound_node_t
+typedef struct CA_SoundNode
 {
   void* data;
   size_t num_samples;
@@ -30,66 +18,48 @@ typedef struct sound_node_t
 
   bool* signal;
 
-  struct sound_node_t* next;
+  struct CA_SoundNode* next;
 }
-sound_node_t;
+CA_SoundNode;
 
 // A function that adds n samples of a given type
-typedef void(*sample_add_fn_t)(void* dst, sound_node_t* node, size_t num_frames);
-
-typedef struct mixer_t__
-{
-  sound_node_t* head;       // The head ot the sound queue
-
-  PaStream* stream;         // The mixer's audio stream
-
-  sample_add_fn_t adder_fn; // Function used to add samples to the audio stream
-
-  wav_info_t wav_info;      // The mixer's wav info
-
-  bool* dummy_signal;        // Used to prevent branching when using playing signals
-  bool pa_initialized;      // True if the mixer has initialized PortAudio
-}
-mixer_t__;
+typedef void(*CA_AdderFn)(void* dst, CA_SoundNode* node, size_t num_frames);
 
 
 // Static declarations
 
 // Returns the audio format as the PortAudio enum variant
-static PaSampleFormat caAudioFmtToPA(audio_fmt_t fmt);
+static PaSampleFormat caAudioFmtToPA(CA_AudioFormat fmt);
+
+// Adds the sound to the audio queue
+static CA_Result caMixerAddSound(CA_Mixer* mixer, CA_Sound* sound, bool* signal, size_t start);
 
 // Stream callback function
 static int caMixerAudioCallback(const void* src, void* dst, unsigned long num_frames, const struct PaStreamCallbackTimeInfo* time_info, PaStreamCallbackFlags flags, void* data);
 
 // Removes any sounds that are finished playing from the mixer's queue
-static inline void caMixerCleanQueue(mixer_t mixer);
+static inline void caMixerCleanQueue(CA_Mixer* mixer);
 
 // 32 bit float sample adder
-static void caMixerSampleAdderF32(void* v_dst, sound_node_t* node, size_t num_samples);
+static void caMixerSampleAdderF32(void* v_dst, CA_SoundNode* node, size_t num_samples);
 
 // 16 bit integer sample adder
-static void caMixerSampleAdderI16(void* v_dst, sound_node_t* node, size_t num_samples);
+static void caMixerSampleAdderI16(void* v_dst, CA_SoundNode* node, size_t num_samples);
 
 // Header function definitions
 
-ca_result_t caMixerCreate(mixer_t* p_mixer, audio_fmt_t fmt, uint32_t sample_rate, uint16_t num_channels, uint32_t frames_per_buffer)
+CA_Result caMixerCreate(CA_Mixer* mixer, CA_AudioFormat fmt, uint32_t sample_rate, uint16_t num_channels, uint32_t frames_per_buffer)
 {
-  // Allocate the mixer
-  mixer_t__* mixer = (mixer_t__*)malloc(sizeof(mixer_t__));
-
-  if (!mixer)
-    return CA_ERR_ALLOC;
-
   // Allocate the sound queue
-  mixer->head = (sound_node_t*)malloc(sizeof(sound_node_t));
+  mixer->_head = (CA_SoundNode*)malloc(sizeof(CA_SoundNode));
 
-  if (!mixer->head)
+  if (!mixer->_head)
   {
     caMixerDestroy(mixer);
     return CA_ERR_ALLOC;
   }
 
-  mixer->head->next = NULL;
+  mixer->_head->next = NULL;
 
   // Initialize PortAudio
   PaError pa_err = Pa_Initialize();
@@ -100,10 +70,10 @@ ca_result_t caMixerCreate(mixer_t* p_mixer, audio_fmt_t fmt, uint32_t sample_rat
     return CA_ERR_PA;
   }
 
-  mixer->pa_initialized = true;
+  mixer->_pa_initialized = true;
 
   // Create audio stream
-  pa_err = Pa_OpenDefaultStream(&mixer->stream, 0, (int)num_channels, caAudioFmtToPA(fmt), (double)sample_rate, frames_per_buffer, caMixerAudioCallback, mixer);
+  pa_err = Pa_OpenDefaultStream(&mixer->_stream, 0, (int)num_channels, caAudioFmtToPA(fmt), (double)sample_rate, frames_per_buffer, caMixerAudioCallback, mixer);
 
   if (pa_err != paNoError)
   {
@@ -112,85 +82,65 @@ ca_result_t caMixerCreate(mixer_t* p_mixer, audio_fmt_t fmt, uint32_t sample_rat
   }
 
   // Finish initialization
-  mixer->adder_fn = (fmt == CA_FMT_F32) ? caMixerSampleAdderF32 : caMixerSampleAdderI16;
+  mixer->_adder_fn = fmt == CA_FMT_F32 ? caMixerSampleAdderF32 : caMixerSampleAdderI16;
 
-  mixer->wav_info = (wav_info_t){ .sample_rate = sample_rate, .num_channels = num_channels, .fmt = fmt };
+  mixer->_wav_info = (CA_WavInfo){ .sample_rate = sample_rate, .num_channels = num_channels, .fmt = fmt };
 
   // Done
-  *p_mixer = mixer;
-
   return CA_SUCCESS;
 }
 
-void caMixerDestroy(mixer_t mixer)
+void caMixerDestroy(CA_Mixer* mixer)
 {
-  if (!mixer)
-    return;
-
   // Free the sound queue
-  sound_node_t* node = mixer->head;
+  CA_SoundNode* node = mixer->_head;
 
   while (node != NULL)
   {
-    sound_node_t* temp = node->next;
+    CA_SoundNode* temp = node->next;
 
     free(node);
     node = temp;
   }
 
   // End the mixer's stream
-  if (mixer->stream)
+  if (mixer->_stream)
   {
-    Pa_StopStream(mixer->stream);
-    Pa_CloseStream(mixer->stream);
+    Pa_StopStream(mixer->_stream);
+    Pa_CloseStream(mixer->_stream);
   }
 
   // Terminate PortAudio (only actually terminates if every other initialization is met with a termination)
-  if (mixer->pa_initialized)
+  if (mixer->_pa_initialized)
     Pa_Terminate();
-
-  // Free the mixer
-  free(mixer);
 }
 
 
-ca_result_t caMixerPlaySound(mixer_t mixer, sound_t sound, bool* signal)
+CA_Result caMixerPlaySound(CA_Mixer* mixer, CA_Sound* sound, bool* signal)
 {
-  // Create a new node
-  sound_node_t* node = (sound_node_t*)malloc(sizeof(sound_node_t));
-
-  if (!node)
-    return CA_ERR_ALLOC;
-
-  // Set up the node
-  node->data = sound->data;
-  node->num_samples = sound->num_samples;
-  node->cur_sample = 0;
-
-  if (signal != NULL)
-  {
-    node->signal = signal;
-    *signal = true;
-  }
-  else
-    node->signal = mixer->dummy_signal;
-
-  // Place into the queue
-  node->next = mixer->head->next;
-  mixer->head->next = node;
-
-  // Done
-  return CA_SUCCESS;
+  return caMixerAddSound(mixer, sound, signal, 0);
 }
 
-void caMixerBegin(mixer_t mixer)
+CA_Result caMixerPlaySoundFrom(CA_Mixer* mixer, CA_Sound* sound, bool* signal, double seconds)
 {
-  Pa_StartStream(mixer->stream);
+  const size_t start = (size_t)((double)mixer->_wav_info.sample_rate * (double)mixer->_wav_info.num_channels * seconds);
+
+  return caMixerAddSound(mixer, sound, signal, start);
+}
+
+void caMixerBegin(CA_Mixer* mixer)
+{
+  Pa_StartStream(mixer->_stream);
+}
+
+void caMixerGetWavInfo(const CA_Mixer* mixer, CA_WavInfo* wav_info)
+{
+  *wav_info = mixer->_wav_info;
 }
 
 
 // Static definitions
-static PaSampleFormat caAudioFmtToPA(audio_fmt_t fmt)
+static PaSampleFormat caAudioFmtToPA(CA_AudioFormat fmt)
 {
   switch (fmt)
   {
@@ -205,20 +155,49 @@ static PaSampleFormat caAudioFmtToPA(audio_fmt_t fmt)
   }
 }
 
+static CA_Result caMixerAddSound(CA_Mixer* mixer, CA_Sound* sound, bool* signal, size_t start)
+{
+  // Create a new node
+  CA_SoundNode* node = (CA_SoundNode*)malloc(sizeof(CA_SoundNode));
+
+  if (!node)
+    return CA_ERR_ALLOC;
+
+  // Set up the node
+  node->data = sound->_data;
+  node->num_samples = sound->_num_samples;
+  node->cur_sample = start;
+
+  if (signal != NULL)
+  {
+    node->signal = signal;
+    *signal = true;
+  }
+  else
+    node->signal = mixer->_dummy_signal;
+
+  // Place into the queue
+  node->next = mixer->_head->next;
+  mixer->_head->next = node;
+
+  // Done
+  return CA_SUCCESS;
+}
+
 static int caMixerAudioCallback(const void* src, void* dst, unsigned long num_frames, const struct PaStreamCallbackTimeInfo* time_info, PaStreamCallbackFlags flags, void* data)
 {
-  mixer_t mixer = (mixer_t)data;
-  size_t num_samples = num_frames * mixer->wav_info.num_channels;
+  CA_Mixer* mixer = (CA_Mixer*)data;
+  size_t num_samples = num_frames * mixer->_wav_info.num_channels;
 
   // Fill the output with silence
-  memset(dst, 0, num_samples * mixer->wav_info.fmt);
+  memset(dst, 0, num_samples * mixer->_wav_info.fmt);
 
   // Add all sounds in queue to the buffer
-  sound_node_t* cur = mixer->head->next;
+  CA_SoundNode* cur = mixer->_head->next;
 
   while (cur != NULL)
   {
-    mixer->adder_fn(dst, cur, num_samples);
+    mixer->_adder_fn(dst, cur, num_samples);
 
     cur = cur->next;
   }
@@ -230,10 +209,10 @@ static int caMixerAudioCallback(const void* src, void* dst, unsigned long num_fr
   return paContinue;
 }
 
-static inline void caMixerCleanQueue(mixer_t mixer)
+static inline void caMixerCleanQueue(CA_Mixer* mixer)
 {
   // Check all queue nodes from the beginning
-  sound_node_t* cur = mixer->head;
+  CA_SoundNode* cur = mixer->_head;
 
   while (cur->next != NULL)
   {
@@ -245,7 +224,7 @@ static inline void caMixerCleanQueue(mixer_t mixer)
     }
 
     // Remove the sound
-    sound_node_t* node = cur->next;
+    CA_SoundNode* node = cur->next;
 
     *node->signal = false;
 
@@ -255,7 +234,7 @@ static inline void caMixerCleanQueue(mixer_t mixer)
   }
 }
 
-static void caMixerSampleAdderF32(void* v_dst, sound_node_t* node, size_t num_samples)
+static void caMixerSampleAdderF32(void* v_dst, CA_SoundNode* node, size_t num_samples)
 {
   float* dst = (float*)v_dst;
   float* src = (float*)node->data;
@@ -271,7 +250,7 @@ static void caMixerSampleAdderF32(void* v_dst, sound_node_t* node, size_t num_sa
   node->cur_sample += num_samples;
 }
 
-static void caMixerSampleAdderI16(void* v_dst, sound_node_t* node, size_t num_samples)
+static void caMixerSampleAdderI16(void* v_dst, CA_SoundNode* node, size_t num_samples)
 {
   int16_t* dst = (int16_t*)v_dst;
   int16_t* src = (int16_t*)node->data;

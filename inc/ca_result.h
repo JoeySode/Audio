@@ -1,12 +1,10 @@
 
-
 #ifndef CA_RESULT_H_
-
 #define CA_RESULT_H_
 
 
 // An enum containing CAudio error types
-typedef enum
+typedef enum CA_Result
 {
   CA_SUCCESS = 0,   // No error
 
@@ -18,7 +16,7 @@ typedef enum
   CA_ERR_OUT,       // Error writing to a file
   CA_ERR_IN,        // Error reading from a file
 }
-ca_result_t;
+CA_Result;
 
 
 #endif // CA_RESULT_H_

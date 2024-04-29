@@ -1,158 +1,128 @@
 
-
 #include "ca_sound.h"
 
 #include <stdlib.h>
 #include <string.h>
 
 
-typedef struct sound_t__
+CA_Result caSoundCreate(CA_Sound* sound, size_t num_samples, CA_AudioFormat fmt)
 {
-  void* data;
-  size_t num_samples;
-
-  wav_info_t wav_info;
-}
-sound_t__;
-
-
-ca_result_t caSoundCreate(sound_t* p_sound, size_t num_samples, audio_fmt_t fmt)
-{
-  wav_info_t wav_info = (wav_info_t){ .sample_rate = 0, .num_channels = 0, .fmt = fmt };
-
-  return caSoundCreateEx(p_sound, num_samples, &wav_info);
-}
-
-ca_result_t caSoundCreateEx(sound_t* p_sound, size_t num_samples, wav_info_t* wav_info)
-{
-  // Allocate the sound
-  sound_t__* sound = (sound_t__*)malloc(sizeof(sound_t__));
-
-  if (!sound)
-    return CA_ERR_ALLOC;
-
   // Allocate the sound's data
-  sound->data = (void*)malloc(num_samples * wav_info->fmt);
+  sound->_data = (void*)malloc(num_samples * fmt);
 
-  if (!sound->data)
+  if (!sound->_data)
   {
     caSoundDestroy(sound);
     return CA_ERR_ALLOC;
   }
 
   // Initialize remaining data
-  sound->num_samples = num_samples;
+  sound->_num_samples = num_samples;
 
-  sound->wav_info = *wav_info;
+  sound->_fmt = fmt;
 
   // Done
-  *p_sound = sound;
-
   return CA_SUCCESS;
 }
 
-void caSoundDestroy(sound_t sound)
+void caSoundDestroy(CA_Sound* sound)
 {
-  if (!sound)
-    return;
+  // Free the sound's data if it has any
+  if (sound->_data)
+  {
+    free(sound->_data);
+  }
 
-  if (sound->data)
-    free(sound->data);
+  // Uninitialize the sound
+  sound->_data = NULL;
 
-  free(sound);
+  sound->_num_samples = 0;
+
+  sound->_fmt = CA_FMT_NONE;
 }
 
 
-ca_result_t caSoundCopy(sound_t src, sound_t* p_dst)
+CA_Result caSoundCopy(CA_Sound* dst, const CA_Sound* src)
 {
-  // Create the new sound
-  sound_t sound;
-  ca_result_t r = caSoundCreateEx(&sound, src->num_samples, &src->wav_info);
+  // Allocate the dst data
+  dst->_data = (void*)malloc(src->_num_samples * src->_fmt);
 
-  if (r != CA_SUCCESS)
-    return r;
+  if (!dst->_data)
+  {
+    return CA_ERR_ALLOC;
+  }
 
-  // Copy the data
-  memcpy(sound->data, src->data, caSoundGetSize(src));
+  // Copy remaining values
+  dst->_num_samples = src->_num_samples;
+
+  dst->_fmt = src->_fmt;
 
   // Done
-  *p_dst = sound;
-
   return CA_SUCCESS;
 }
 
-ca_result_t caSoundToF(sound_t sound)
+CA_Result caSoundToF(CA_Sound* sound)
 {
   // Allocate the new data
-  float* new_data = (float*)malloc(sound->num_samples * sizeof(float));
+  float* new_data = (float*)malloc(sound->_num_samples * sizeof(float));
 
   if (!new_data)
     return CA_ERR_ALLOC;
 
   // Convert all samples
-  int16_t* old_data = (int16_t*)sound->data;
+  int16_t* old_data = (int16_t*)sound->_data;
 
-  for (size_t i = 0; i < sound->num_samples; i++)
+  for (size_t i = 0; i < sound->_num_samples; i++)
     new_data[i] = (float)old_data[i] / (float)INT16_MAX;
 
   // Free old data and swap
-  free(sound->data);
+  free(sound->_data);
 
-  sound->data = (void*)new_data;
+  sound->_data = (void*)new_data;
 
   // Done
   return CA_SUCCESS;
 }
 
-ca_result_t caSoundToI(sound_t sound)
+CA_Result caSoundToI(CA_Sound* sound)
 {
   // Allocate the new data
-  int16_t* new_data = (int16_t*)malloc(sound->num_samples * sizeof(int16_t));
+  int16_t* new_data = (int16_t*)malloc(sound->_num_samples * sizeof(int16_t));
 
   if (!new_data)
     return CA_ERR_ALLOC;
 
   // Convert all samples
-  float* old_data = (float*)sound->data;
+  float* old_data = (float*)sound->_data;
 
-  for (size_t i = 0; i < sound->num_samples; i++)
+  for (size_t i = 0; i < sound->_num_samples; i++)
     new_data[i] = (int16_t)(old_data[i] * INT16_MAX);
 
   // Free old data and swap
-  free(sound->data);
+  free(sound->_data);
 
-  sound->data = (void*)new_data;
+  sound->_data = (void*)new_data;
 
   // Done
   return CA_SUCCESS;
 }
 
-audio_fmt_t caSoundGetFormat(sound_t sound)
+CA_AudioFormat caSoundGetFormat(const CA_Sound* sound)
 {
-  return sound->wav_info.fmt;
+  return sound->_fmt;
 }
 
-void* caSoundGetData(sound_t sound)
+void* caSoundGetData(const CA_Sound* sound)
 {
-  return sound->data;
+  return sound->_data;
 }
 
-size_t caSoundGetNumSamples(sound_t sound)
+size_t caSoundGetNumSamples(const CA_Sound* sound)
 {
-  return sound->num_samples;
+  return sound->_num_samples;
 }
 
-size_t caSoundGetSize(sound_t sound)
+size_t caSoundGetSize(const CA_Sound* sound)
 {
-  return sound->num_samples * sound->wav_info.fmt;
-}
-
-void caSoundGetWavInfo(sound_t sound, wav_info_t* wav_info)
-{
-  *wav_info = sound->wav_info;
-}
-
-void caSoundSetWavInfo(sound_t sound, wav_info_t* wav_info)
-{
-  sound->wav_info = *wav_info;
+  return sound->_num_samples * sound->_fmt;
 }

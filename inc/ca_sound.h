@@ -1,8 +1,5 @@
 
-
-
 #ifndef CA_SOUND_H_
-
 #define CA_SOUND_H_
 
 
@@ -12,49 +9,46 @@
 
 #include "ca_audio_fmt.h"
 #include "ca_result.h"
-#include "ca_wav.h"
 
 
-// A structure containing audio data
-typedef struct sound_t__* sound_t;
+// A structure representing a sound
+typedef struct CA_Sound
+{
+  void* _data;
+  size_t _num_samples;
+
+  CA_AudioFormat _fmt;
+}
+CA_Sound;
 
 
 // Creates the sound
-ca_result_t caSoundCreate(sound_t* p_sound, size_t num_samples, audio_fmt_t fmt);
-
-// Creates the sound with the given wav data
-ca_result_t caSoundCreateEx(sound_t* p_sound, size_t num_samples, wav_info_t* wav_info);
+CA_Result caSoundCreate(CA_Sound* sound, size_t num_samples, CA_AudioFormat fmt);
 
 // Destroys the sound
-void caSoundDestroy(sound_t p_sound);
+void caSoundDestroy(CA_Sound* sound);
 
 
 // Copies the first sound's data to the second (the second should not have been created)
-ca_result_t caSoundCopy(sound_t src, sound_t* p_dst);
+CA_Result caSoundCopy(CA_Sound* dst, const CA_Sound* src);
 
 // Converts the sound's audio data from int16 to float (the sound's audio data must be in int16 format)
-ca_result_t caSoundToF(sound_t sound);
+CA_Result caSoundToF(CA_Sound* sound);
 
 // Converts the sound's audio date from float to int16 (the sound's audio data must be in float format)
-ca_result_t caSoundToI(sound_t sound);
+CA_Result caSoundToI(CA_Sound* sound);
 
 // The sound's audio format
-audio_fmt_t caSoundGetFormat(sound_t sound);
+CA_AudioFormat caSoundGetFormat(const CA_Sound* sound);
 
 // The sound's audio data
-void* caSoundGetData(sound_t sound);
+void* caSoundGetData(const CA_Sound* sound);
 
 // The number of samples the sound holds
-size_t caSoundGetNumSamples(sound_t sound);
+size_t caSoundGetNumSamples(const CA_Sound* sound);
 
 // The size of the sound's audio data in bytes
-size_t caSoundGetSize(sound_t sound);
-
-// Copies the sound's wav info to the given one
-void caSoundGetWavInfo(sound_t sound, wav_info_t* wav_info);
-
-// Sets the sound's wav info to the given one
-void caSoundSetWavInfo(sound_t sound, wav_info_t* wav_info);
+size_t caSoundGetSize(const CA_Sound* sound);
 
 
 #endif // CA_SOUND_H_
